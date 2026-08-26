@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}Setup — SiteIQ{% endblock %}
+{% block body %}
+<h1>Setup and API keys</h1>
+<p class="muted">SiteIQ works with no keys at all. Adding keys makes it dramatically better.
+Each one is optional and the app degrades gracefully without it.</p>
+
+<div class="card">
+  <h3>Current status</h3>
+  <dl class="kv">
+    <dt>Google Maps API key</dt>
+    <dd>{% if google_enabled %}<span class="ev ev-VERIFIED">CONNECTED</span>{% else %}
+      <span class="ev ev-UNAVAILABLE">NOT CONNECTED</span> — no ratings, reviews, hours, photos or Street View{% endif %}</dd>
+    <dt>NYC Open Data token</dt>
+    <dd>{% if nyc_token %}<span class="ev ev-VERIFIED">CONNECTED</span>{% else %}
+      <span class="ev ev-MODELED">NOT SET</span> — city data still works, just rate-limited{% endif %}</dd>
+    <dt>OpenStreetMap / Overpass</dt><dd><span class="ev ev-VERIFIED">ALWAYS ON</span> — no key needed</dd>
+    <dt>U.S. Census ACS</dt><dd><span class="ev ev-VERIFIED">ALWAYS ON</span> — no key needed</dd>
+  </dl>
+</div>
+
+<h2>Keys ranked by how much they improve SiteIQ</h2>
+
+<div class="card">
+  <h3>1. GOOGLE_MAPS_API_KEY <span class="pill t-VERYHIGH">TRANSFORMATIVE</span></h3>
+  <p>This is the single biggest upgrade. Without it, competitor intelligence is roughly half of
+  what it should be.</p>
+  <p class="muted"><b>What it adds:</b> competitor star ratings, review counts, opening hours and
+  24-hour status, storefront photos, Google Maps links, websites, phone numbers, price levels, and
+  Street View imagery of your storefront in the report, PDF and PowerPoint.</p>
+  <p class="muted"><b>APIs to enable in Google Cloud:</b> Places API (New), Geocoding API,
+  Street View Static API.</p>
+  <p class="muted"><b>Cost:</b> Google gives a monthly free credit that covers light use. A single
+  location report costs roughly 5–15 cents in API calls. SiteIQ caches every response for a week,
+  so re-opening a report or generating its PDF costs nothing.</p>
+  <p class="muted"><b>Set in Railway as:</b> <code>GOOGLE_MAPS_API_KEY</code></p>
+</div>
+
+<div class="card">
+  <h3>2. NYC_APP_TOKEN <span class="pill t-MEDIUM">USEFUL, FREE</span></h3>
+  <p class="muted"><b>What it adds:</b> nothing new by itself — NYC Open Data already works without
+  it. It raises your rate limit so comparing 15 addresses at once does not get throttled.</p>
+  <p class="muted"><b>Where:</b> free signup at data.cityofnewyork.us, create an app token.</p>
+  <p class="muted"><b>Set in Railway as:</b> <code>NYC_APP_TOKEN</code></p>
+</div>
+
+<div class="card">
+  <h3>3. CONTACT_EMAIL <span class="pill t-MEDIUM">DO THIS</span></h3>
+  <p class="muted">OpenStreetMap's free geocoder asks that apps identify themselves with a real
+  contact address. Set this to your email so SiteIQ stays a good citizen and does not get blocked.</p>
+  <p class="muted"><b>Set in Railway as:</b> <code>CONTACT_EMAIL</code></p>
+</div>
+
+<h2>Paid data that would help, and what it would cost</h2>
+<div class="card tight tablewrap">
+  <table>
+    <thead><tr><th>Provider</th><th>What it would add</th><th>Env variable</th><th>Importance</th></tr></thead>
+    <tbody>
+      <tr><td>Placer.ai / Unacast / SafeGraph</td>
+        <td>Real measured foot traffic by hour and day. This is the one gap SiteIQ cannot close for
+        free — every daypart score in the app is modeled because no free foot-traffic feed exists.</td>
+        <td><code>FOOTFALL_API_KEY</code></td><td><span class="pill t-VERYHIGH">Very high</span></td></tr>
+      <tr><td>CoStar / Crexi / LoopNet</td>
+        <td>Actual retail asking rents, so rent stops being an estimated band.</td>
+        <td><code>CRE_API_KEY</code></td><td><span class="pill t-HIGH">High</span></td></tr>
+      <tr><td>Walk Score</td><td>Walkability and transit scores as an independent cross-check.</td>
+        <td><code>WALKSCORE_API_KEY</code></td><td><span class="pill t-MEDIUM">Medium</span></td></tr>
+      <tr><td>Yelp Fusion</td><td>A second review source to cross-check Google.</td>
+        <td><code>YELP_API_KEY</code></td><td><span class="pill t-MEDIUM">Medium</span></td></tr>
+    </tbody>
+  </table>
+</div>
+<p class="tiny">SiteIQ's provider layer is built so any of these can be added as a new adapter file
+without touching the rest of the app. None are wired up today because none have free tiers.</p>
+
+<h2>Keeping your reports between deploys</h2>
+<div class="card">
+  <p class="muted">Railway wipes the filesystem on every redeploy. To keep saved reports and your
+  calibration data, add a Volume in Railway mounted at <code>/data</code>. SiteIQ detects it
+  automatically. Without it the app still works — you just lose history when you redeploy.</p>
+</div>
+{% endblock %}

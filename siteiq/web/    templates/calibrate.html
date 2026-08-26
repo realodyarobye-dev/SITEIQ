@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}Calibrate — SiteIQ{% endblock %}
+{% block body %}
+<h1>Teach SiteIQ your numbers</h1>
+<p class="muted" style="max-width:660px">This is the most valuable thing you can do with SiteIQ.
+Enter a store you already operate along with its real average daily sales. SiteIQ analyses that
+address exactly as it would a new one, compares its estimate to your actual number, and corrects
+every future estimate for that business type by the difference.</p>
+<p class="tiny">Two or three of your own stores turns the sales model from a generic estimate into
+one anchored to how you actually run a store.</p>
+
+{% if error %}<div class="err">{{ error }}</div>{% endif %}
+
+<form class="card" method="post">
+  <div class="grid g2">
+    <div class="field">
+      <label for="label">Store name</label>
+      <input id="label" name="label" placeholder="e.g. 9th Ave store">
+    </div>
+    <div class="field">
+      <label for="address">Store address</label>
+      <input id="address" name="address" required autocapitalize="words" placeholder="352 9th Ave, New York, NY">
+    </div>
+    <div class="field">
+      <label for="concept">Business type</label>
+      <select id="concept" name="concept">
+        {% for key, cfg in concepts.items() %}
+        <option value="{{ key }}" {% if key == default_concept %}selected{% endif %}>{{ cfg.label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label for="actual_daily_sales">Actual average daily sales ($)</label>
+      <input id="actual_daily_sales" name="actual_daily_sales" required inputmode="decimal" placeholder="e.g. 4800">
+    </div>
+    <div class="field">
+      <label for="rent">Actual monthly rent ($)</label>
+      <input id="rent" name="rent" inputmode="decimal" placeholder="Optional but useful">
+    </div>
+    <div class="field">
+      <label for="sqft">Square feet</label>
+      <input id="sqft" name="sqft" inputmode="numeric" placeholder="Optional">
+    </div>
+    <div class="field">
+      <label for="hours">Hours</label>
+      <input id="hours" name="hours" placeholder="e.g. 24 hours">
+    </div>
+    <div class="field">
+      <label for="notes">Notes</label>
+      <input id="notes" name="notes" placeholder="Anything worth remembering">
+    </div>
+  </div>
+  <button class="btn wide" type="submit">Analyse and calibrate</button>
+</form>
+
+{% if benchmarks %}
+<h2>Your calibration set</h2>
+<div class="card tight tablewrap">
+  <table>
+    <thead><tr><th>Store</th><th>Type</th><th class="num">Your actual</th>
+    <th class="num">SiteIQ modeled</th><th class="num">Ratio</th><th></th></tr></thead>
+    <tbody>
+    {% for b in benchmarks %}
+      <tr>
+        <td>{{ b.label }}<br><span class="tiny">{{ b.address }}</span></td>
+        <td class="muted">{{ b.concept }}</td>
+        <td class="num">${{ '{:,.0f}'.format(b.actual_daily_sales) }}</td>
+        <td class="num">${{ '{:,.0f}'.format(b.modeled_daily or 0) }}</td>
+        <td class="num" style="color:{{ 'var(--mint)' if b.ratio and b.ratio >= 1 else 'var(--amber)' }}">
+          {{ '%.2f'|format(b.ratio) if b.ratio else '—' }}×</td>
+        <td class="num">
+          <form method="post" action="/calibrate/{{ b.id }}/delete" style="margin:0">
+            <button class="btn danger" type="submit" style="padding:8px 14px;min-height:38px;font-size:13px">Remove</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+<p class="tiny">A ratio above 1.0 means SiteIQ is underestimating you and future reports for that
+business type will be adjusted up. The correction is capped between 0.55× and 1.8× so one unusual
+store cannot distort everything.</p>
+{% endif %}
+{% endblock %}
