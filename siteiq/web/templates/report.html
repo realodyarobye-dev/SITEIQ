@@ -1,0 +1,708 @@
+{% extends "base.html" %}
+{% block title %}{{ r.address }} — SiteIQ{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+{% endblock %}
+
+{% macro money(v) %}${{ '{:,.0f}'.format(v) }}{% endmacro %}
+{% macro ev(tag) %}<span class="ev ev-{{ tag }}">{{ tag }}</span>{% endmacro %}
+
+{% block body %}
+{% set sc = r.sales.scenarios %}
+{% set pnl = r.pnl.by_scenario %}
+{% set ra = r.rent_assessment %}
+
+<div class="actions">
+  <a class="btn" href="/report/{{ r.id }}/pdf">Download PDF report</a>
+  <a class="btn ghost" href="/report/{{ r.id }}/pptx">Download PowerPoint</a>
+  <a class="btn ghost" href="/">New location</a>
+</div>
+
+<!-- ===================================================== 20-second answer -->
+<div class="verdict-head">
+  <div class="addr">
+    <h1>{{ r.address }}</h1>
+    <p class="muted">{{ r.resolved_address }}</p>
+    <p><span class="badge v-{{ r.verdict|replace(' ','') }}">{{ r.verdict }}</span>
+       <span class="dim" style="margin-left:8px">{{ r.concept_label }}</span></p>
+  </div>
+  <div class="scores">
+    <div class="scorebox"><div class="n">{{ r.score }}</div><div class="l">Score</div></div>
+    <div class="scorebox"><div class="n">{{ r.confidence.score }}</div><div class="l">Confidence</div></div>
+  </div>
+</div>
+
+<div class="answer">
+  <div class="h">{{ r.five_hundred_k.headline }}</div>
+  <p>{{ r.five_hundred_k.explanation }}</p>
+  <p class="muted" style="margin:0">{{ r.verdict_reason }}</p>
+</div>
+
+<div class="grid g4">
+  <div class="metric"><div class="k">Conservative</div><div class="v">{{ money(sc.Conservative.daily) }}</div><div class="s">/day · {{ money(sc.Conservative.monthly) }}/mo</div></div>
+  <div class="metric"><div class="k">Realistic</div><div class="v" style="color:var(--mint)">{{ money(sc.Realistic.daily) }}</div><div class="s">/day · {{ money(sc.Realistic.monthly) }}/mo</div></div>
+  <div class="metric"><div class="k">Strong operator</div><div class="v">{{ money(sc['Strong Operator'].daily) }}</div><div class="s">/day · {{ money(sc['Strong Operator'].monthly) }}/mo</div></div>
+  <div class="metric"><div class="k">Elite operator</div><div class="v">{{ money(sc['Elite Operator'].daily) }}</div><div class="s">/day · {{ money(sc['Elite Operator'].monthly) }}/mo</div></div>
+</div>
+
+<div class="grid g4">
+  <div class="metric">
+    <div class="k">Monthly profit (realistic)</div>
+    <div class="v" style="color:{{ 'var(--mint)' if pnl.Realistic.profit > 0 else 'var(--red)' }}">{{ money(pnl.Realistic.profit) }}</div>
+    <div class="s">{{ pnl.Realistic.margin_pct }}% margin · {{ money(pnl.Realistic.annual_profit) }}/yr</div>
+  </div>
+  <div class="metric">
+    <div class="k">Rent</div><div class="v">{{ money(r.rent.monthly_rent) }}</div>
+    <div class="s">{{ 'ESTIMATED' if r.rent.estimated else 'You entered this' }}</div>
+  </div>
+  <div class="metric">
+    <div class="k">Rent as % of sales</div><div class="v">{{ ra.rent_pct }}%</div>
+    <div class="s">{{ ra.band }} · healthy is {{ ra.healthy_pct }}%</div>
+  </div>
+  <div class="metric">
+    <div class="k">Direct competitors</div><div class="v">{{ r.competition.direct_count }}</div>
+    <div class="s">{{ r.competition.total }} total · {{ r.competition.saturation_label }}</div>
+  </div>
+</div>
+
+<div class="grid g2">
+  <div class="card tight">
+    <div class="k dim" style="font-weight:800;letter-spacing:.08em;text-transform:uppercase;font-size:10.5px">Strongest competitor</div>
+    {% if r.competition.strongest %}
+      <h3 style="margin:6px 0 4px">{{ r.competition.strongest.name }}</h3>
+      <p class="muted" style="margin:0">
+        {{ '%.2f'|format(r.competition.strongest.distance_mi) }} mi ·
+        {% if r.competition.strongest.rating %}{{ r.competition.strongest.rating }}★ ·
+        {{ '{:,}'.format(r.competition.strongest.reviews) }} reviews · {% endif %}
+        <span class="pill t-{{ r.competition.strongest.threat|replace(' ','') }}">{{ r.competition.strongest.threat }}</span>
+      </p>
+    {% else %}<p class="muted">None identified nearby.</p>{% endif %}
+  </div>
+  <div class="card tight">
+    <div class="k dim" style="font-weight:800;letter-spacing:.08em;text-transform:uppercase;font-size:10.5px">Biggest opportunity / biggest risk</div>
+    <p style="margin:6px 0 4px"><b>{{ (r.opportunities.best.title if r.opportunities.best else 'None identified') }}</b></p>
+    <p class="muted" style="margin:0">Risk: {{ (r.risks.worst.title if r.risks.worst else 'None identified') }}
+      {% if r.risks.worst %}<span class="pill s-{{ r.risks.worst.severity }}">{{ r.risks.worst.severity }}</span>{% endif %}</p>
+  </div>
+</div>
+
+<div class="toc">
+  <a href="#map-section">Map</a><a href="#block">The block</a><a href="#history">History</a>
+  <a href="#competition">Competitors</a><a href="#generators">Traffic</a><a href="#customers">Customers</a>
+  <a href="#dayparts">Dayparts</a><a href="#demographics">Demographics</a><a href="#sales">Sales model</a>
+  <a href="#economics">Economics</a><a href="#opportunities">Opportunities</a><a href="#risks">Risks</a>
+  <a href="#confidence">Data confidence</a><a href="#checklist">Checklist</a>
+</div>
+
+<!-- ================================================================= map -->
+<section id="map-section">
+<h2>Map and street intelligence</h2>
+<div class="radiobar" id="radiobar">
+  <button data-r="0.05" class="on">Immediate block</button>
+  <button data-r="0.1">0.1 mi</button>
+  <button data-r="0.25">0.25 mi</button>
+  <button data-r="0.5">0.5 mi</button>
+  <button data-r="1">1 mi</button>
+</div>
+<div id="map"></div>
+<div class="legend" id="legend"></div>
+{% if r.streetview %}
+<div class="card tight" style="margin-top:14px">
+  <img src="/media/streetview?lat={{ r.lat }}&lon={{ r.lon }}" alt="Street View of the location"
+       loading="lazy" style="width:100%;max-width:640px;border-radius:12px;display:block">
+  <p class="tiny">Google Street View, captured {{ r.streetview.date or 'date unknown' }}.
+  {{ r.streetview.copyright or '' }} Imagery may be years out of date — confirm the storefront in person.</p>
+</div>
+{% endif %}
+
+<div class="card tight tablewrap" style="margin-top:14px">
+  <table>
+    <thead><tr><th>Radius</th><th class="num">Mapped places</th><th class="num">Food &amp; grocery</th><th>Top categories</th></tr></thead>
+    <tbody>
+    {% for x in r.radii %}
+      <tr><td>{{ x.label }}</td><td class="num">{{ x.total }}</td><td class="num">{{ x.food }}</td>
+      <td class="muted">{% for k, v in x.by_category.items() %}{% if loop.index <= 5 %}{{ r.category_meta[k].label if k in r.category_meta else k }} ({{ v }}){% if not loop.last %}, {% endif %}{% endif %}{% endfor %}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+<p class="tiny">Counts reflect places mapped in OpenStreetMap. Real-world counts are higher —
+absence from the map is not evidence of absence.</p>
+</section>
+
+<!-- =============================================================== block -->
+<section id="block">
+<h2>The block</h2>
+{% set b = r.block %}
+<p class="muted">{{ b.street_axis_desc }}
+{% if b.streets.on_street %}You are on {{ b.streets.on_street }}{% if b.streets.cross_street %}, near {{ b.streets.cross_street }}{% endif %}.{% endif %}
+{{ 'Corner position.' if b.is_corner else 'Mid-block position.' }}</p>
+<div class="banner {{ 'good' if b.storefront_count >= 12 else 'warn' }}">
+  {{ b.retail_continuity[0] }} — {{ b.retail_continuity[1] }}
+</div>
+
+<div class="grid g3">
+  {% for title, items in [('Immediately to one side', b.immediate_left),
+                          ('Immediately to the other side', b.immediate_right),
+                          ('Across the street', b.across_street)] %}
+  <div class="card tight">
+    <h3>{{ title }}</h3>
+    {% if items %}
+      <ul style="margin:6px 0 0;padding-left:18px">
+      {% for n in items[:6] %}<li>{{ n.name }} <span class="dim">· {{ n.category_label }} · {{ n.distance_ft }} ft</span></li>{% endfor %}
+      </ul>
+    {% else %}<p class="muted">Nothing mapped on this side.</p>{% endif %}
+  </div>
+  {% endfor %}
+</div>
+<p class="tiny">{{ b.method }}</p>
+
+<div class="grid g2">
+  <div class="card tight">
+    <h3>Vacancies</h3>
+    {% if b.vacancy.detected %}
+      <ul style="margin:6px 0 0;padding-left:18px">
+      {% for v in b.vacancy['items'] %}<li>{{ v.name }} <span class="dim">· {{ v.distance_ft }} ft</span></li>{% endfor %}</ul>
+    {% else %}<p class="muted">None detected. {{ ev('UNAVAILABLE') }}</p>{% endif %}
+    <p class="tiny">{{ b.vacancy.note }}</p>
+  </div>
+  <div class="card tight">
+    <h3>Construction on this street</h3>
+    {% if b.construction %}
+      <ul style="margin:6px 0 0;padding-left:18px">
+      {% for c in b.construction[:6] %}<li>{{ c.address }} <span class="dim">· {{ c.type }} · {{ c.year }}</span></li>{% endfor %}</ul>
+      <p class="tiny">{{ b.construction_count }} recent permits. Source: NYC Department of Buildings.
+      Construction means future customers but scaffolding and sheds hurt visibility while it runs.</p>
+    {% else %}<p class="muted">No recent DOB permits found for this street. {{ ev('UNAVAILABLE') }}</p>{% endif %}
+  </div>
+</div>
+
+{% if b.building and b.building.available %}
+<details class="more"><summary>Buildings and land use on the block</summary>
+<dl class="kv">
+  <dt>Residential units on surrounding lots</dt><dd>{{ '{:,}'.format(b.building.residential_units) }}</dd>
+  <dt>Ground-floor retail area</dt><dd>{{ '{:,}'.format(b.building.retail_sqft) }} sq ft</dd>
+  <dt>Office area</dt><dd>{{ '{:,}'.format(b.building.office_sqft) }} sq ft</dd>
+  <dt>Median year built</dt><dd>{{ b.building.median_year_built or 'Unknown' }}</dd>
+  <dt>Average height</dt><dd>{{ b.building.avg_floors or 'Unknown' }} floors</dd>
+</dl>
+{% if b.building.large_residential_buildings %}
+<h3>Largest residential buildings nearby</h3>
+<ul>{% for x in b.building.large_residential_buildings %}<li>{{ x.address }} — {{ '{:,}'.format(x.units) }} units, {{ x.floors }} floors</li>{% endfor %}</ul>
+{% endif %}
+<p class="tiny">Source: {{ b.building.source }} {{ ev('VERIFIED') }}</p>
+</details>
+{% endif %}
+</section>
+
+<!-- ============================================================= history -->
+<section id="history">
+<h2>Business longevity and location history</h2>
+{% set sh = r.storefront_history %}
+<div class="card">
+  <h3>What has occupied this exact storefront</h3>
+  {% if sh.available %}
+    <div class="tablewrap"><table>
+      <thead><tr><th>Business</th><th>Type</th><th>In city records</th><th>Status</th></tr></thead>
+      <tbody>{% for t in sh.tenants[:16] %}
+        <tr><td>{{ t.name }}</td><td class="muted">{{ t.kind }}</td>
+        <td>{{ t.first_year }}{% if t.last_year != t.first_year %}–{{ t.last_year }}{% endif %}</td>
+        <td>{{ 'Appears current' if t.appears_current else 'No recent records' }}</td></tr>
+      {% endfor %}</tbody></table></div>
+    <p class="tiny">{{ ev('VERIFIED') }} for the years shown — these are dates the city recorded
+    activity at this address. Absence of recent records is an inference that a business closed,
+    not proof. SiteIQ never invents an opening date.</p>
+  {% else %}
+    <p class="muted">{{ sh.reason or 'No NYC records matched this address.' }} {{ ev('UNAVAILABLE') }}</p>
+    <p class="tiny">Unknown, not empty. The space may never have held a licensed food business,
+    or the address format may not match city records.</p>
+  {% endif %}
+</div>
+
+{% set churn = b.churn %}
+{% if churn and churn.available %}
+<div class="card">
+  <h3>Does this block hold its businesses?</h3>
+  <div class="banner {{ 'bad' if churn.verdict == 'HIGH TURNOVER' else ('good' if churn.verdict == 'STABLE' else 'warn') }}">
+    {{ churn.verdict }} — {{ churn.churn_rate }}% of food businesses on record are no longer active
+  </div>
+  <p>{{ churn.note }}</p>
+  <div class="grid g4">
+    <div class="metric"><div class="k">On record nearby</div><div class="v">{{ churn.total_on_record }}</div></div>
+    <div class="metric"><div class="k">Still active</div><div class="v">{{ churn.currently_active }}</div></div>
+    <div class="metric"><div class="k">Operating 8+ years</div><div class="v">{{ churn.long_lived }}</div></div>
+    <div class="metric"><div class="k">Closed within 2 yrs</div><div class="v">{{ churn.short_lived_closures }}</div></div>
+  </div>
+  {% if churn.oldest_neighbours %}
+  <h3 style="margin-top:16px">Longest-surviving neighbours</h3>
+  <ul>{% for x in churn.oldest_neighbours %}<li>{{ x.name }} — confirmed since at least {{ x.since }} ({{ x.years }} years in records)</li>{% endfor %}</ul>
+  {% endif %}
+  <p class="tiny">{{ churn.caveat }} Source: {{ churn.source }}</p>
+</div>
+{% endif %}
+</section>
+
+<!-- ========================================================= competition -->
+<section id="competition">
+<h2>Competitors</h2>
+{% set c = r.competition %}
+{% if not r.google_enabled %}
+<div class="banner warn">No Google Maps key connected — ratings, review counts, hours and photos are
+unavailable. Competitors below come from OpenStreetMap and NYC records only.
+<a href="/setup">Add a key →</a></div>
+{% endif %}
+<div class="grid g4">
+  <div class="metric"><div class="k">Total within 0.5 mi</div><div class="v">{{ c.total }}</div></div>
+  <div class="metric"><div class="k">Direct competitors</div><div class="v">{{ c.direct_count }}</div></div>
+  <div class="metric"><div class="k">Within one block</div><div class="v">{{ c.within_block }}</div></div>
+  <div class="metric"><div class="k">Open 24 hours</div><div class="v">{{ c.open_24h_count }}</div></div>
+</div>
+<p class="muted">{{ c.saturation_label }} — pressure index {{ c.pressure }}.
+{% if c.avg_rating %}Average incumbent rating {{ c.avg_rating }}★ across {{ c.rated_count }} rated businesses.{% endif %}</p>
+{% if c.cross_check %}<p class="tiny">{{ c.cross_check.note }}</p>{% endif %}
+
+{% for x in r.competitors[:14] %}
+<div class="card">
+  <div class="comp">
+    <div>
+      {% if x.photo and r.google_enabled %}
+        <img class="photo" loading="lazy" src="/media/place-photo?name={{ x.photo|urlencode }}&w=420" alt="{{ x.name }}">
+        {% if x.photo_attribution %}<p class="tiny">Photo: {{ x.photo_attribution }}</p>{% endif %}
+      {% else %}<div class="nophoto">No photo available</div>{% endif %}
+    </div>
+    <div>
+      <div class="head">
+        <h3 style="margin:0">#{{ x.rank }} {{ x.name }}</h3>
+        <span class="pill t-{{ x.threat|replace(' ','') }}">{{ x.threat }} THREAT</span>
+      </div>
+      <div class="facts">
+        <span>{{ x.category_label }}</span>
+        {% if x.distance_mi is not none %}<span>{{ '%.2f'|format(x.distance_mi) }} mi · {{ (x.distance_mi * 5280)|int }} ft · {{ x.walk_minutes }} min walk</span>{% endif %}
+        {% if x.rating %}<span>{{ x.rating }}★ · {{ '{:,}'.format(x.reviews) }} reviews</span>{% endif %}
+        {% if x.open_24h %}<span style="color:var(--amber)">Open 24 hours</span>
+        {% elif x.open_now is not none %}<span>{{ 'Open now' if x.open_now else 'Closed now' }}</span>{% endif %}
+        {% if x.price_level %}<span>{{ x.price_level }}</span>{% endif %}
+        {% if x.since %}<span style="color:var(--mint)">{{ x.since.statement }}</span>{% endif %}
+      </div>
+      <p style="margin:8px 0">{{ x.why }}</p>
+      <div class="threats">
+        <div><div class="k">Prepared food</div><span class="pill t-{{ x.prepared_food_threat|replace(' ','') }}">{{ x.prepared_food_threat }}</span></div>
+        <div><div class="k">Convenience</div><span class="pill t-{{ x.convenience_threat|replace(' ','') }}">{{ x.convenience_threat }}</span></div>
+        <div><div class="k">Delivery</div><span class="pill t-{{ x.delivery_threat|replace(' ','') }}">{{ x.delivery_threat }}</span></div>
+      </div>
+      <p class="dim" style="margin-top:10px">
+        {% if x.maps_uri %}<a href="{{ x.maps_uri }}" target="_blank" rel="noopener">Open in Maps →</a>{% endif %}
+        {% if x.website %} · <a href="{{ x.website }}" target="_blank" rel="noopener">Website</a>{% endif %}
+        {% if x.phone %} · {{ x.phone }}{% endif %}
+        {% if x.since %} · Source: {{ x.since.source }}{% endif %}
+      </p>
+    </div>
+  </div>
+</div>
+{% endfor %}
+</section>
+
+<!-- ========================================================== generators -->
+<section id="generators">
+<h2>Demand generators</h2>
+<p class="muted">What physically puts people on this sidewalk, ranked by how much a
+{{ r.concept_label|lower }} can actually monetise them.</p>
+<div class="card tight tablewrap">
+  <table>
+    <thead><tr><th>Generator</th><th>Type</th><th class="num">Distance</th><th class="num">Walk</th><th class="num">Relevance</th></tr></thead>
+    <tbody>{% for g in r.generators['items'][:20] %}
+      <tr><td>{{ g.name }}</td><td class="muted">{{ g.category_label }}</td>
+      <td class="num">{{ g.distance_ft }} ft</td><td class="num">{{ g.walk_minutes }} min</td>
+      <td class="num">{{ g.relevance }}</td></tr>
+    {% endfor %}</tbody>
+  </table>
+</div>
+<details class="more"><summary>Why the top generators matter here</summary>
+{% set seen = [] %}
+{% for g in r.generators.top %}{% if g.category not in seen %}{% set _ = seen.append(g.category) %}
+  <h3>{{ g.name }} <span class="dim">· {{ g.category_label }} · {{ g.distance_ft }} ft</span></h3>
+  <p class="muted">{{ g.why }}</p>
+{% endif %}{% endfor %}
+</details>
+</section>
+
+<!-- =========================================================== customers -->
+<section id="customers">
+<h2>Who your customers will be</h2>
+<p class="tiny">{{ r.customers.method }} {{ ev('INFERRED') }}</p>
+{% for x in r.customers.ranked %}
+<div class="card tight">
+  <div class="barrow">
+    <h3 style="margin:0">{{ x.label }} <span class="pill {{ 't-LOW' if x.tier == 'HIGH VALUE' else 't-MEDIUM' }}">{{ x.tier }}</span></h3>
+    <span class="dim">{{ x.score }}/100</span>
+  </div>
+  <div class="bar"><i style="width:{{ x.score }}%"></i></div>
+  <p style="margin:10px 0 4px">{{ x.buys }}</p>
+  <p class="dim" style="margin:0">{{ x.value }}</p>
+</div>
+{% endfor %}
+<div class="banner {{ 'warn' if r.customers.concentration.level == 'CONCENTRATED' else 'good' }}">
+  Customer mix: {{ r.customers.concentration.level }} — {{ r.customers.concentration.note }}
+</div>
+</section>
+
+<!-- ============================================================ dayparts -->
+<section id="dayparts">
+<h2>When the block is busy</h2>
+<div class="banner warn">MODELED, not measured. {{ r.dayparts.disclaimer }}</div>
+<div class="card">
+  <div class="legend" style="margin-bottom:14px">
+    <span><i style="background:var(--mint)"></i>Weekday</span>
+    <span><i style="background:var(--blue)"></i>Weekend</span>
+  </div>
+  {% for w in r.dayparts.windows %}
+  <div style="margin-bottom:16px">
+    <div class="barrow"><b>{{ w.label }}</b><span class="dim">{{ w.weekday }} / {{ w.weekend }}</span></div>
+    <div class="bar"><i style="width:{{ w.weekday }}%"></i></div>
+    <div class="bar blue" style="margin-top:3px"><i style="width:{{ w.weekend }}%"></i></div>
+    <p class="dim" style="margin:6px 0 0">{{ w.note }}</p>
+  </div>
+  {% endfor %}
+</div>
+<div class="grid g3">
+  {% for name, v in r.dayparts.summary.items() %}
+  <div class="metric"><div class="k">{{ name }}</div><div class="v">{{ v.score }}</div>
+  <div class="s">weekday {{ v.weekday }} · weekend {{ v.weekend }}</div></div>
+  {% endfor %}
+</div>
+<p class="muted">Peak: {{ r.dayparts.peak.label }}. Weakest: {{ r.dayparts.trough.label }}.
+{{ r.dayparts.shape[1] }}</p>
+</section>
+
+<!-- ======================================================== demographics -->
+<section id="demographics">
+<h2>Demographics</h2>
+{% set d = r.demographics %}
+{% if d.available %}
+<p class="muted">Census tract {{ d.tract_name }} · {{ d.source }} {{ ev('VERIFIED') }}</p>
+<div class="grid g4">
+  {% for key, label, prefix, suffix in [('population','Tract population','',''),
+    ('households','Tract households','',''), ('median_income','Median income','$',''),
+    ('median_age','Median age','',''), ('density_sq_mi','Density','','/sq mi'),
+    ('avg_household_size','Household size','',''), ('median_rent','Median home rent','$','')] %}
+  <div class="metric">
+    <div class="k">{{ label }}</div>
+    <div class="v">{% if d.facts[key].known %}{{ prefix }}{{ '{:,.0f}'.format(d.facts[key].value) if d.facts[key].value >= 100 else d.facts[key].value }}{% else %}N/A{% endif %}</div>
+    <div class="s">{{ suffix }}{% if not d.facts[key].known %}Unavailable{% endif %}</div>
+  </div>
+  {% endfor %}
+</div>
+{% if d.character and d.character.value %}<p class="muted">{{ d.character.value }}</p>{% endif %}
+
+<details class="more"><summary>Estimated residents by radius, and how that is derived</summary>
+<div class="tablewrap"><table>
+  <thead><tr><th>Geography</th><th class="num">Estimated residents</th><th>Evidence</th></tr></thead>
+  <tbody>{% for radius, fv in d.radius_estimates.items()|sort %}
+    <tr><td>{{ radius }} mi radius</td>
+    <td class="num">{% if fv.known %}{{ '{:,}'.format(fv.value) }}{% else %}Unavailable{% endif %}</td>
+    <td>{{ ev('INFERRED') }}</td></tr>
+  {% endfor %}</tbody></table></div>
+<p class="tiny">Tract totals above are tract totals. These radius figures are derived from measured
+tract density applied to a circle — inferences, not counts, and they assume even distribution
+which no real block has.</p>
+{% if d.transit_commute_share and d.transit_commute_share.known %}
+<p class="muted">{{ (d.transit_commute_share.value * 100)|round|int }}% of local workers commute by
+transit or on foot — they pass storefronts instead of driving past them.</p>{% endif %}
+{% if d.income_mix %}<p class="muted">{{ (d.income_mix.high_share * 100)|round|int }}% of households
+earn $100k+; {{ (d.income_mix.low_share * 100)|round|int }}% earn under $50k.</p>{% endif %}
+</details>
+{% else %}
+<div class="banner bad">Census data could not be resolved for this coordinate. {{ ev('UNAVAILABLE') }}
+— not zero. Every population-driven estimate in this report is weaker as a result.</div>
+{% endif %}
+</section>
+
+<!-- =============================================================== sales -->
+<section id="sales">
+<h2>Sales potential</h2>
+<div class="banner warn">MODELED ESTIMATE built from customer pools — not measured sales.</div>
+<div class="card tight tablewrap">
+  <table>
+    <thead><tr><th>Scenario</th><th class="num">Daily</th><th class="num">Weekly</th><th class="num">Monthly</th><th class="num">Annual</th></tr></thead>
+    <tbody>{% for name in ['Conservative','Realistic','Strong Operator','Elite Operator'] %}
+      <tr {% if name == 'Realistic' %}class="highlight"{% endif %}>
+        <td><b>{{ name }}</b></td>
+        <td class="num">{{ money(sc[name].daily) }}</td><td class="num">{{ money(sc[name].weekly) }}</td>
+        <td class="num">{{ money(sc[name].monthly) }}</td><td class="num">{{ money(sc[name].annual) }}</td></tr>
+    {% endfor %}</tbody>
+  </table>
+</div>
+{% for name in ['Conservative','Realistic','Strong Operator','Elite Operator'] %}
+<p class="dim"><b>{{ name }}:</b> {{ sc[name].meaning }}</p>
+{% endfor %}
+
+<div class="grid g2">
+  <div class="card tight">
+    <h3>Pushing the estimate UP</h3>
+    {% for x in r.sales.drivers_up %}
+      <p style="margin-bottom:8px"><b style="color:var(--mint)">{{ x.factor }}</b> <span class="dim">{{ x.effect }}</span><br>
+      <span class="muted" style="font-size:14px">{{ x.detail }}</span></p>
+    {% else %}<p class="muted">No material positive drivers identified.</p>{% endfor %}
+  </div>
+  <div class="card tight">
+    <h3>Pulling it DOWN</h3>
+    {% for x in r.sales.drivers_down %}
+      <p style="margin-bottom:8px"><b style="color:var(--orange)">{{ x.factor }}</b> <span class="dim">{{ x.effect }}</span><br>
+      <span class="muted" style="font-size:14px">{{ x.detail }}</span></p>
+    {% else %}<p class="muted">No material negative drivers identified.</p>{% endfor %}
+  </div>
+</div>
+
+<details class="more"><summary>Show me exactly how this number was built</summary>
+<p class="muted">Daily transactions are estimated pool by pool: how many people of each type pass
+within capture range, multiplied by the share that transact on a normal day, adjusted for how much
+competition splits them.</p>
+<div class="tablewrap"><table>
+  <thead><tr><th>Customer pool</th><th class="num">Estimated pool</th><th class="num">Base capture</th>
+  <th class="num">After competition</th><th class="num">Sales/day</th></tr></thead>
+  <tbody>{% for l in r.sales.transaction_lines %}
+    <tr><td>{{ l.label }}<br><span class="tiny">{{ l.basis }}</span></td>
+    <td class="num">{{ '{:,}'.format(l.pool_size) }}</td><td class="num">{{ l.capture_pct }}%</td>
+    <td class="num">{{ l.effective_pct }}%</td><td class="num">{{ l.transactions|round|int }}</td></tr>
+  {% endfor %}
+  <tr class="highlight"><td><b>Total before modifiers</b></td><td class="num"></td><td class="num"></td>
+  <td class="num"></td><td class="num"><b>{{ r.sales.base_transactions|round|int }}</b></td></tr>
+  </tbody></table></div>
+<p class="muted">{{ r.sales.competitive_note }} Average ticket assumption
+${{ '%.2f'|format(r.sales.ticket) }}.</p>
+
+<h3>Physical capacity ceiling</h3>
+<div class="banner {{ 'warn' if r.sales.capacity.constrained else 'good' }}">
+  Modeled demand {{ r.sales.capacity.raw_demand }} transactions/day against a store capacity of
+  about {{ r.sales.capacity.max_daily|round|int }}/day — running at
+  {{ r.sales.capacity.utilisation }}% of capacity.
+</div>
+<p class="muted">{{ r.sales.capacity.note }}</p>
+{% if r.sales.capacity.constrained %}
+<p class="muted">This location has more demand walking past than the space can serve. That is a good
+problem, but it means extra square footage, another register or longer hours convert directly into
+sales here — and that a smaller space would leave money on the sidewalk.</p>
+{% endif %}
+
+<h3>Location modifiers</h3>
+<div class="tablewrap"><table>
+  <thead><tr><th>Modifier</th><th class="num">Effect</th><th>Why</th></tr></thead>
+  <tbody>{% for m in r.sales.modifiers %}
+    <tr><td>{{ m.name }}</td><td class="num">{{ '%+.0f'|format(m.effect_pct) }}%</td>
+    <td class="muted">{{ m.note }}</td></tr>
+  {% endfor %}
+  <tr class="highlight"><td><b>Combined</b></td><td class="num"><b>×{{ r.sales.total_modifier }}</b></td><td></td></tr>
+  </tbody></table></div>
+
+{% if r.sales.delivery.applicable %}
+<h3>Delivery channel</h3>
+<p class="muted">{{ r.sales.delivery.note }}</p>
+{% endif %}
+<p class="tiny">{{ r.sales.disclaimer }}</p>
+</details>
+</section>
+
+<!-- =========================================================== economics -->
+<section id="economics">
+<h2>Rent and operating economics</h2>
+<div class="banner {{ 'bad' if ra.band in ['HIGH','UNSUSTAINABLE'] else ('warn' if ra.band == 'TIGHT' else 'good') }}">
+  Rent is {{ ra.rent_pct }}% of modeled sales — {{ ra.band }}. {{ ra.verdict }}
+</div>
+<p class="muted">{{ r.rent.note }}</p>
+<dl class="kv">
+  <dt>Monthly rent</dt><dd>{{ money(r.rent.monthly_rent) }} {{ ev('MODELED') if r.rent.estimated else ev('USER-ENTERED') }}</dd>
+  {% if r.rent.band %}<dt>Modeled range</dt><dd>{{ money(r.rent.band.low) }} – {{ money(r.rent.band.high) }} per month</dd>{% endif %}
+  <dt>Assumed size</dt><dd>{{ '{:,}'.format(r.rent.sqft|int) }} sq ft{{ ' (estimated)' if r.rent.sqft_estimated }}</dd>
+  {% if r.rent.annual_psf %}<dt>Implied rate</dt><dd>${{ '{:,}'.format(r.rent.annual_psf) }} / sq ft / year</dd>{% endif %}
+  <dt>Maximum supportable rent</dt><dd>{{ money(ra.max_supportable_rent) }} per month at modeled sales</dd>
+  {% if ra.gap > 0 %}<dt>Negotiation target</dt><dd style="color:var(--amber)">Reduce by about {{ money(ra.gap) }}/month</dd>{% endif %}
+  {% if r.pnl.breakeven_daily %}<dt>Break-even</dt><dd>{{ money(r.pnl.breakeven_daily) }} per day in sales</dd>{% endif %}
+</dl>
+
+<h3>Monthly P&amp;L by scenario</h3>
+<div class="card tight tablewrap">
+  <table>
+    <thead><tr><th>Line</th>{% for n in ['Conservative','Realistic','Strong Operator','Elite Operator'] %}<th class="num">{{ n }}</th>{% endfor %}</tr></thead>
+    <tbody>
+    {% for key, label in [('revenue','Sales'),('cogs','Cost of goods'),('labour','Labour'),
+        ('delivery_commission','Delivery commission'),('card_fees','Card processing'),
+        ('rent','Rent'),('fixed','Other fixed costs')] %}
+      <tr><td>{{ label }}</td>{% for n in ['Conservative','Realistic','Strong Operator','Elite Operator'] %}
+        <td class="num">{{ money(pnl[n][key]) }}</td>{% endfor %}</tr>
+    {% endfor %}
+      <tr class="highlight"><td><b>Operating profit</b></td>
+      {% for n in ['Conservative','Realistic','Strong Operator','Elite Operator'] %}
+        <td class="num" style="color:{{ 'var(--mint)' if pnl[n].profit > 0 else 'var(--red)' }}"><b>{{ money(pnl[n].profit) }}</b></td>{% endfor %}</tr>
+      <tr><td>Margin</td>{% for n in ['Conservative','Realistic','Strong Operator','Elite Operator'] %}
+        <td class="num">{{ pnl[n].margin_pct }}%</td>{% endfor %}</tr>
+      <tr><td>Annual profit</td>{% for n in ['Conservative','Realistic','Strong Operator','Elite Operator'] %}
+        <td class="num">{{ money(pnl[n].annual_profit) }}</td>{% endfor %}</tr>
+    </tbody>
+  </table>
+</div>
+<details class="more"><summary>Model assumptions</summary>
+<ul>{% for a in r.pnl.assumptions %}<li>{{ a }}</li>{% endfor %}</ul>
+</details>
+</section>
+
+<!-- ======================================================= opportunities -->
+<section id="opportunities">
+<h2>Opportunities</h2>
+<p class="tiny">{{ r.opportunities.method }}</p>
+{% for o in r.opportunities['items'] %}
+<div class="opp str-{{ o.strength }}">
+  <h3 style="margin:0 0 4px">{{ o.title }} <span class="pill {{ 't-LOW' if o.strength == 'HIGH' else 't-MEDIUM' }}">{{ o.strength }}</span></h3>
+  <ul class="signals">{% for s in o.signals %}<li>{{ s }}</li>{% endfor %}</ul>
+  <div class="action"><b>What to do:</b> {{ o.action }}</div>
+</div>
+{% else %}
+<div class="card"><p>No multi-signal opportunities detected. That is a finding in itself: this
+location does not present an obvious gap to attack, so you would be competing on execution alone.</p></div>
+{% endfor %}
+</section>
+
+<!-- =============================================================== risks -->
+<section id="risks">
+<h2>What can kill this deal</h2>
+{% if r.risks.counts %}
+<p class="muted">{% for k, v in r.risks.counts.items() %}<span class="pill s-{{ k }}">{{ k }}: {{ v }}</span> {% endfor %}</p>
+{% endif %}
+{% for x in r.risks['items'] %}
+<div class="risk sev-{{ x.severity }}">
+  <h3 style="margin:0 0 4px">{{ x.title }} <span class="pill s-{{ x.severity }}">{{ x.severity }}</span></h3>
+  <p style="margin:0 0 6px">{{ x.detail }}</p>
+  {% if x.action %}<div class="action"><b>What to do:</b> {{ x.action }}</div>{% endif %}
+</div>
+{% else %}
+<div class="card"><p>No material red flags detected.</p></div>
+{% endfor %}
+</section>
+
+<!-- ========================================================== confidence -->
+<section id="confidence">
+<h2>Data confidence</h2>
+<div class="banner {{ 'good' if r.confidence.score >= 65 else 'warn' }}">
+  {{ r.confidence.score }}/100 — {{ r.confidence.missing_count }} major inputs unavailable
+</div>
+<p class="muted">Every major conclusion is graded by how it was established. OBSERVED and VERIFIED
+mean somebody recorded it. MODELED means SiteIQ calculated it. INFERRED means it was reasoned from
+indirect signals. UNAVAILABLE means unknown — never silently treated as zero.</p>
+<div class="card tight tablewrap">
+  <table>
+    <thead><tr><th>Conclusion</th><th>Evidence</th><th>Source</th><th>Note</th></tr></thead>
+    <tbody>{% for e in r.confidence.entries %}
+      <tr><td>{{ e.topic }}</td><td>{{ ev(e.confidence) }}</td>
+      <td class="muted">{{ e.source }}</td><td class="dim">{{ e.note }}</td></tr>
+    {% endfor %}</tbody>
+  </table>
+</div>
+
+<h3>Sources</h3>
+<div class="card tight tablewrap">
+  <table>
+    <thead><tr><th>Source</th><th>What it provided</th></tr></thead>
+    <tbody>{% for s in r.sources %}
+      <tr><td>{% if s.url %}<a href="{{ s.url }}" target="_blank" rel="noopener">{{ s.name }}</a>{% else %}{{ s.name }}{% endif %}<br><span class="tiny">{{ s.detail }}</span></td>
+      <td class="muted">{{ s.used_for|join('; ') }}</td></tr>
+    {% endfor %}</tbody>
+  </table>
+</div>
+<p class="tiny">SiteIQ uses only public and licensed APIs. It does not scrape services in violation
+of their terms, and it does not fabricate any value it cannot source.</p>
+</section>
+
+<!-- =========================================================== checklist -->
+<section id="checklist">
+<h2>Before you sign: $500K diligence checklist</h2>
+<div class="card">
+  <p class="muted">This report is a screening tool. Nothing in it substitutes for these steps.</p>
+  <ol class="checklist">{% for x in r.checklist %}<li>{{ x }}</li>{% endfor %}</ol>
+</div>
+</section>
+
+<div class="actions">
+  <a class="btn" href="/report/{{ r.id }}/pdf">Download PDF report</a>
+  <a class="btn ghost" href="/report/{{ r.id }}/pptx">Download PowerPoint</a>
+  <a class="btn ghost" href="/">Analyse another location</a>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script id="mapdata" type="application/json">{{ r.map|tojson }}</script>
+<script id="catmeta" type="application/json">{{ r.category_meta|tojson }}</script>
+<script>
+(function(){
+  var data = JSON.parse(document.getElementById('mapdata').textContent);
+  var meta = JSON.parse(document.getElementById('catmeta').textContent);
+  var center = data.center;
+
+  var map = L.map('map', {scrollWheelZoom:false, tap:true}).setView(center, 17);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    attribution:'&copy; OpenStreetMap contributors &copy; CARTO', maxZoom:19
+  }).addTo(map);
+  map.on('click', function(){ map.scrollWheelZoom.enable(); });
+
+  L.marker(center, {icon:L.divIcon({className:'', html:'<div class="sitedot" style="width:20px;height:20px"></div>', iconSize:[20,20], iconAnchor:[10,10]})})
+    .addTo(map).bindPopup('<b>Your location</b>').openPopup();
+
+  var circle = L.circle(center, {radius:80, color:'#5ee0a0', weight:1.5, fillOpacity:0.05}).addTo(map);
+  var layer = L.layerGroup().addTo(map);
+  var used = {};
+
+  function draw(radius){
+    layer.clearLayers(); used = {};
+    data.markers.forEach(function(m){
+      if (m.distance_mi !== null && m.distance_mi > radius) return;
+      var cat = meta[m.category] || {label:m.category, colour:'#6a7686'};
+      used[m.category] = cat;
+      var isComp = m.kind === 'competitor';
+      var size = isComp ? 15 : 11;
+      var dot = L.divIcon({
+        className:'',
+        html:'<div style="width:'+size+'px;height:'+size+'px;border-radius:50%;background:'+cat.colour+
+             ';border:2px solid '+(isComp?'#fff':'rgba(255,255,255,.45)')+'"></div>',
+        iconSize:[size,size], iconAnchor:[size/2,size/2]
+      });
+      var html = '<b>'+esc(m.name)+'</b><br><span style="color:#93a6ba">'+esc(cat.label);
+      if (m.distance_mi !== null && m.distance_mi !== undefined)
+        html += ' · '+Math.round(m.distance_mi*5280)+' ft';
+      html += '</span>';
+      if (isComp){
+        html += '<br>Threat: <b>'+esc(m.threat)+'</b>';
+        if (m.rating) html += '<br>'+m.rating+'★ · '+m.reviews.toLocaleString()+' reviews';
+        html += '<br><a href="#competition" onclick="document.getElementById(\'competition\')'+
+                '.scrollIntoView({behavior:\'smooth\'})">See full profile ↓</a>';
+      } else if (m.relevance){
+        html += '<br>Relevance: '+m.relevance+'/100';
+      }
+      L.marker([m.lat, m.lon], {icon:dot}).bindPopup(html).addTo(layer);
+    });
+    legend();
+  }
+
+  function legend(){
+    var el = document.getElementById('legend');
+    el.innerHTML = Object.keys(used).map(function(k){
+      return '<span><i style="background:'+used[k].colour+'"></i>'+esc(used[k].label)+'</span>';
+    }).join('');
+  }
+
+  function esc(s){ var d=document.createElement('div'); d.textContent = s==null?'':s; return d.innerHTML; }
+
+  document.getElementById('radiobar').addEventListener('click', function(e){
+    var btn = e.target.closest('button'); if (!btn) return;
+    Array.prototype.forEach.call(this.querySelectorAll('button'), function(b){ b.classList.remove('on'); });
+    btn.classList.add('on');
+    var radius = parseFloat(btn.dataset.r);
+    circle.setRadius(radius * 1609.34);
+    var zoom = radius <= 0.05 ? 18 : radius <= 0.1 ? 17 : radius <= 0.25 ? 16 : radius <= 0.5 ? 15 : 14;
+    map.setView(center, zoom);
+    draw(radius);
+  });
+
+  draw(0.05);
+  setTimeout(function(){ map.invalidateSize(); }, 250);
+})();
+</script>
+{% endblock %}

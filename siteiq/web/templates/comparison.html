@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Comparison — SiteIQ{% endblock %}
+{% block body %}
+<div class="actions">
+  <a class="btn" href="/comparison/{{ c.id }}/pdf">Download comparison PDF</a>
+  <a class="btn ghost" href="/comparison/{{ c.id }}/pptx">Download PowerPoint</a>
+  <a class="btn ghost" href="/compare">New comparison</a>
+</div>
+
+<h1>{{ c.count }} locations ranked</h1>
+<p class="muted">{{ c.concept_label }}</p>
+
+{% if c.winner %}
+<div class="answer">
+  <div class="h">{{ c.winner.headline }}</div>
+  <p>{{ c.winner.why }}</p>
+  <p class="tiny" style="margin:0">{{ c.winner.caveat }}</p>
+</div>
+{% endif %}
+
+<div class="card tight tablewrap">
+  <table>
+    <thead><tr>
+      <th>#</th><th>Address</th><th class="num">Score</th><th class="num">Conf</th>
+      <th class="num">Realistic</th><th class="num">Strong</th><th class="num">Profit/mo</th>
+      <th class="num">Rent</th><th class="num">Rent %</th><th class="num">Comp</th>
+      <th>Verdict</th><th></th>
+    </tr></thead>
+    <tbody>
+    {% for r in c.rows %}
+      <tr {% if loop.first %}class="highlight"{% endif %}>
+        <td>{{ r.rank }}</td>
+        <td>{{ r.address }}</td>
+        <td class="num"><b>{{ r.score }}</b></td>
+        <td class="num">{{ r.confidence }}</td>
+        <td class="num">${{ '{:,.0f}'.format(r.realistic_daily) }}</td>
+        <td class="num">${{ '{:,.0f}'.format(r.strong_daily) }}</td>
+        <td class="num" style="color:{{ 'var(--mint)' if r.monthly_profit > 0 else 'var(--red)' }}">${{ '{:,.0f}'.format(r.monthly_profit) }}</td>
+        <td class="num">${{ '{:,.0f}'.format(r.rent) }}{{ '*' if r.rent_estimated }}</td>
+        <td class="num">{{ r.rent_pct }}%</td>
+        <td class="num">{{ r.direct_competitors }}/{{ r.competitors }}</td>
+        <td><span class="badge v-{{ r.verdict|replace(' ','') }}">{{ r.verdict }}</span></td>
+        <td class="num"><a href="/report/{{ r.report_id }}">Open</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+<p class="tiny">* rent is a SiteIQ estimate, not a quoted rent. Comp shows direct/total competitors
+within 0.5 mi. All sales and profit figures are modeled.</p>
+
+<h2>Opportunity and risk by location</h2>
+{% for r in c.rows %}
+<div class="card tight">
+  <div class="barrow">
+    <h3 style="margin:0">#{{ r.rank }} {{ r.address }}</h3>
+    <span class="badge v-{{ r.verdict|replace(' ','') }}">{{ r.verdict }}</span>
+  </div>
+  <p class="muted" style="margin:8px 0 4px"><b style="color:var(--mint)">Opportunity:</b> {{ r.opportunity }}</p>
+  <p class="muted" style="margin:0"><b style="color:var(--orange)">Risk:</b> {{ r.risk }}
+    <span class="pill s-{{ r.risk_severity }}">{{ r.risk_severity }}</span></p>
+</div>
+{% endfor %}
+
+{% if c.failures %}
+<h2>Could not be analysed</h2>
+<div class="card"><ul>{% for f in c.failures %}<li>{{ f }} — address could not be located</li>{% endfor %}</ul></div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Saved reports — SiteIQ{% endblock %}
+{% block body %}
+<h1>Saved reports</h1>
+{% if reports %}
+<div class="card tight tablewrap">
+  <table>
+    <thead><tr><th>Date</th><th>Address</th><th>Type</th><th class="num">Score</th>
+    <th class="num">Conf</th><th>Verdict</th><th></th></tr></thead>
+    <tbody>
+    {% for r in reports %}
+      <tr>
+        <td class="muted">{{ r.created_at[:10] }}</td>
+        <td>{{ r.address }}</td>
+        <td class="muted">{{ r.concept }}</td>
+        <td class="num">{{ r.score }}</td>
+        <td class="num">{{ r.confidence }}</td>
+        <td><span class="badge v-{{ r.verdict|replace(' ','') }}">{{ r.verdict }}</span></td>
+        <td class="num"><a href="/report/{{ r.id }}">Open</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="card"><p class="muted">No reports yet. <a href="/">Analyse your first location →</a></p></div>
+{% endif %}
+
+{% if comparisons %}
+<h2>Saved comparisons</h2>
+<div class="card tight tablewrap">
+  <table>
+    <thead><tr><th>Date</th><th>Business type</th><th></th></tr></thead>
+    <tbody>{% for c in comparisons %}
+      <tr><td class="muted">{{ c.created_at[:10] }}</td><td>{{ c.concept }}</td>
+      <td class="num"><a href="/comparison/{{ c.id }}">Open</a></td></tr>
+    {% endfor %}</tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}
