@@ -4,7 +4,7 @@
     "builder": "DOCKERFILE"
   },
   "deploy": {
-    "startCommand": "gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --threads 8 --timeout 180 --graceful-timeout 30 --access-logfile - --error-logfile -",
+    "startCommand": "sh -c 'gunicorn app:app --bind 0.0.0.0:${PORT} --workers 2 --threads 8 --timeout 180 --graceful-timeout 30 --access-logfile - --error-logfile -'",
     "healthcheckPath": "/health",
     "healthcheckTimeout": 100,
     "restartPolicyType": "ON_FAILURE",
